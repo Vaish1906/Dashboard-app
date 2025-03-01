@@ -29,8 +29,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-# File uploader
-
 fl = st.file_uploader(":file_folder: Upload a file", type=["csv", "txt", "xlsx", "xls"])
 
 if fl is not None:
