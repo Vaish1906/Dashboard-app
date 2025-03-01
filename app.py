@@ -45,6 +45,8 @@ if fl is not None:
         st.dataframe(df.head())  # Display the first few rows in Streamlit
     except Exception as e:
         st.error(f"Error loading file: {e}")
+else:
+    st.error(f"Please upload file")
 
 
 col1, col2 = st.columns((2))
