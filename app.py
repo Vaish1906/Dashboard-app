@@ -29,6 +29,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+# File uploader
 fl = st.file_uploader(":file_folder: Upload a file", type=["csv", "txt", "xlsx", "xls"])
 
 if fl is not None:
@@ -1415,4 +1416,3 @@ with col2:
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("""</div>""", unsafe_allow_html=True)
-
