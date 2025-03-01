@@ -29,12 +29,22 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-fl = st.file_uploader(":file_folder: Upload a file",type=(["csv","txt","xlsx","xls"]))
-if fl is not None:
-    filename = fl.name
-    st.write(filename)
-    df = pd.read_csv(filename, encoding = "ISO-8859-1")
+fl = st.file_uploader(":file_folder: Upload a file", type=["csv", "txt", "xlsx", "xls"])
 
+if fl is not None:
+    st.write(f"Uploaded File: {fl.name}")
+    
+    # Read the file directly using pandas
+    try:
+        if fl.name.endswith(".csv") or fl.name.endswith(".txt"):
+            df = pd.read_csv(fl, encoding="ISO-8859-1")  # Read CSV or TXT
+        elif fl.name.endswith(".xlsx") or fl.name.endswith(".xls"):
+            df = pd.read_excel(fl, engine="openpyxl")  # Read Excel files
+        
+        st.write("File Loaded Successfully!")
+        st.dataframe(df.head())  # Display the first few rows in Streamlit
+    except Exception as e:
+        st.error(f"Error loading file: {e}")
 
 
 col1, col2 = st.columns((2))
