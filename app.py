@@ -30,7 +30,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 fl = st.file_uploader(":file_folder: Upload a file", type=["csv", "txt", "xlsx", "xls"])
-
+condition=True
 if fl is not None:
     st.write(f"Uploaded File: {fl.name}")
     
@@ -55,10 +55,11 @@ else:
     "chat_sentiment", "chatbot_response_time", "overall_conversation_time"
     ]
     df = pd.DataFrame(columns)
+    condition=False
     
 
 col1, col2 = st.columns((2))
-if not df.empty:
+if condition:
     df["Chat Date"] = pd.to_datetime(df["recorded_on_timestamp"])
     
     # Getting the min and max date 
