@@ -54,30 +54,8 @@ else:
     "query_intent", "conversation_id", "previous_query_intent", "overall_chat",
     "chat_sentiment", "chatbot_response_time", "overall_conversation_time"
     ]
+    df = pd.DataFrame(columns)
     
-    # Define values
-    values = [
-        [
-            "a", "b", "13/3/2024 17:33", 
-            "13/3/2024 9:33", "13/3/2024 17:35", "13/3/2024 9:35", "modelx", 
-            "model", "vect", 1, 10, "user", 
-            "is there lab next week?", "13/3/2024 17:33", "13/3/2024 9:33", 0, 0, "neutral", 
-            "Class Schedule", 1, "", 
-            "is there lab next week? | what week is it now | what is the deadline for my assignment | I love how smooth the chatbot’s responses are.", 
-            "negative", 60, 120
-        ],
-        [   "a", "b", "13/3/2024 17:33", 
-            "13/3/2024 9:33", "13/3/2024 17:35", "13/3/2024 9:35", "modelx", 
-            "model", "vect", 1, 10, "user", 
-            "what week is it now?", "13/3/2024 17:33", "13/3/2024 9:33", 0, 0, "positive", 
-            "Class Schedule", 1, "", 
-            "is there lab next week? | what week is it now | what is the deadline for my assignment | I love how smooth the chatbot’s responses are.", 
-            "negative", 60, 120
-    ]
-    ]
-    
-    # Create DataFrame
-    df = pd.DataFrame(values, columns=columns)
 
 col1, col2 = st.columns((2))
 df["Chat Date"] = pd.to_datetime(df["recorded_on_timestamp"])
