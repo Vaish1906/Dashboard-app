@@ -2,5 +2,3 @@ plotly
 pandas
 matplotlib
 wordcloud
-os
-warnings
