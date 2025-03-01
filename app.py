@@ -58,14 +58,21 @@ else:
     # Define values
     values = [
         [
-            "65f172e8192f78bab2a94539", "44793f1faad064b52f6716c2c4b0633e", "13/3/2024 17:33", 
-            "13/3/2024 9:33", "13/3/2024 17:35", "13/3/2024 9:35", "asknarelle-experimental-gpt-35-turbo", 
-            "gpt-3.5-turbo-instruct", "vector-sc1015-ay23t2-b", 0.0162755, 10795, "user", 
+            "a", "b", "13/3/2024 17:33", 
+            "13/3/2024 9:33", "13/3/2024 17:35", "13/3/2024 9:35", "modelx", 
+            "model", "vect", 1, 10, "user", 
             "is there lab next week?", "13/3/2024 17:33", "13/3/2024 9:33", 0, 0, "neutral", 
             "Class Schedule", 1, "", 
             "is there lab next week? | what week is it now | what is the deadline for my assignment | I love how smooth the chatbot’s responses are.", 
             "negative", 60, 120
         ]
+        [   "a", "b", "13/3/2024 17:33", 
+            "13/3/2024 9:33", "13/3/2024 17:35", "13/3/2024 9:35", "modelx", 
+            "model", "vect", 1, 10, "user", 
+            "what week is it now?", "13/3/2024 17:33", "13/3/2024 9:33", 0, 0, "positive", 
+            "Class Schedule", 1, "", 
+            "is there lab next week? | what week is it now | what is the deadline for my assignment | I love how smooth the chatbot’s responses are.", 
+            "negative", 60, 120
     ]
     
     # Create DataFrame
