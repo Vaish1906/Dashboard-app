@@ -404,7 +404,7 @@ if condition:
                         ax.axis('off')
     
                         # Word cloud container with centered sentiment title and underline
-                        st.markdown('<div class="wordcloud-container">', unsafe_allow_html=True)
+                        #st.markdown('<div class="wordcloud-container">', unsafe_allow_html=True)
     
                         st.pyplot(fig)
                         st.markdown('</div>', unsafe_allow_html=True)
