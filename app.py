@@ -74,6 +74,7 @@ else:
             "is there lab next week? | what week is it now | what is the deadline for my assignment | I love how smooth the chatbot’s responses are.", 
             "negative", 60, 120
     ]
+    ]
     
     # Create DataFrame
     df = pd.DataFrame(values, columns=columns)
