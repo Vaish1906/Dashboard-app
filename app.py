@@ -65,7 +65,7 @@ else:
             "Class Schedule", 1, "", 
             "is there lab next week? | what week is it now | what is the deadline for my assignment | I love how smooth the chatbot’s responses are.", 
             "negative", 60, 120
-        ]
+        ],
         [   "a", "b", "13/3/2024 17:33", 
             "13/3/2024 9:33", "13/3/2024 17:35", "13/3/2024 9:35", "modelx", 
             "model", "vect", 1, 10, "user", 
