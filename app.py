@@ -30,6 +30,7 @@ st.markdown(
     unsafe_allow_html=True
 )
 # File uploader
+
 fl = st.file_uploader(":file_folder: Upload a file", type=["csv", "txt", "xlsx", "xls"])
 
 if fl is not None:
@@ -46,7 +47,6 @@ if fl is not None:
         st.dataframe(df.head())  # Display the first few rows in Streamlit
     except Exception as e:
         st.error(f"Error loading file: {e}")
-
 
 
 col1, col2 = st.columns((2))
