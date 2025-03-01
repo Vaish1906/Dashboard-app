@@ -45,7 +45,31 @@ if fl is not None:
         st.dataframe(df.head())  # Display the first few rows in Streamlit
     except Exception as e:
         st.error(f"Error loading file: {e}")
-
+else:
+    columns = [
+    "ï»¿_id", "Person", "stime_text", "stime_timestamp", "last_interact_text",
+    "last_interact_timestamp", "llm_deployment_name", "llm_model_name", "vectorstore_index",
+    "overall_cost", "overall_tokens", "role", "content", "recorded_on_text",
+    "recorded_on_timestamp", "token_cost", "tokens", "user_sentiment",
+    "query_intent", "conversation_id", "previous_query_intent", "overall_chat",
+    "chat_sentiment", "chatbot_response_time", "overall_conversation_time"
+    ]
+    
+    # Define values
+    values = [
+        [
+            "65f172e8192f78bab2a94539", "44793f1faad064b52f6716c2c4b0633e", "13/3/2024 17:33", 
+            "13/3/2024 9:33", "13/3/2024 17:35", "13/3/2024 9:35", "asknarelle-experimental-gpt-35-turbo", 
+            "gpt-3.5-turbo-instruct", "vector-sc1015-ay23t2-b", 0.0162755, 10795, "user", 
+            "is there lab next week?", "13/3/2024 17:33", "13/3/2024 9:33", 0, 0, "neutral", 
+            "Class Schedule", 1, "", 
+            "is there lab next week? | what week is it now | what is the deadline for my assignment | I love how smooth the chatbot’s responses are.", 
+            "negative", 60, 120
+        ]
+    ]
+    
+    # Create DataFrame
+    df = pd.DataFrame(values, columns=columns)
 
 col1, col2 = st.columns((2))
 df["Chat Date"] = pd.to_datetime(df["recorded_on_timestamp"])
