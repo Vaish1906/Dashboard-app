@@ -8,9 +8,11 @@ This Streamlit dashboard allows users to visualize and monitor sentiment and int
 # To obtain the appropriate data format
 Call the conversion function from the python package to convert from JSON to csv: https://pypi.org/project/chatbot-analysis/
 
-# Steps to run the file
+# Steps to run the file 
 1. Configure your API_KEY
-2. pip install -r requirements.txt
-3. streamlit run app.py
+2. python -m venv venv
+3. source venv/bin/activate  # On Windows: venv\Scripts\activate
+3. pip install -r requirements.txt
+4. streamlit run app.py
 
 
