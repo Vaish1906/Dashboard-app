@@ -6,6 +6,7 @@ import warnings
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import plotly.graph_objects as go
+import seaborn as sns
 
 warnings.filterwarnings('ignore')
 
@@ -39,28 +40,29 @@ st.title("File Uploader or Path Input")
 fl = st.file_uploader(":file_folder: Upload a file", type=["csv", "txt", "xlsx", "xls"])
 csv_path = st.text_input("📂 Or enter the path to a CSV/XLSX file for real-time monitoring:")
 
-df = None  # Initialize dataframe
+df=None
+df1 = None  # Initialize dataframe
 condition=True
 if fl is not None or csv_path:
     try:
         if fl is not None:
             st.write(f"Uploaded File: {fl.name}")
             if fl.name.endswith(".csv") or fl.name.endswith(".txt"):
-                df = pd.read_csv(fl, encoding="ISO-8859-1")
+                df1= pd.read_csv(fl, encoding="ISO-8859-1")
             elif fl.name.endswith(".xlsx") or fl.name.endswith(".xls"):
-                df = pd.read_excel(fl, engine="openpyxl")
+                df1 = pd.read_excel(fl, engine="openpyxl")
         elif csv_path:
             if os.path.exists(csv_path):
                 st.write(f"Loading from path: {csv_path}")
                 if csv_path.endswith(".csv") or csv_path.endswith(".txt"):
-                    df = pd.read_csv(csv_path, encoding="ISO-8859-1")
+                    df1 = pd.read_csv(csv_path, encoding="ISO-8859-1")
             else:
                 st.error("File path does not exist. Please enter a valid path.")
                 condition=False
 
-        if df is not None:
+        if df1 is not None:
             st.success("File Loaded Successfully!")
-            st.dataframe(df.head())
+            st.dataframe(df1.head())
     except Exception as e:
         st.error(f"Error loading file: {e}")
 
@@ -74,28 +76,77 @@ else:
     "chat_sentiment", "chatbot_response_time", "overall_conversation_time"
     ]
     df = pd.DataFrame(columns)
+    df1= pd.DataFrame(columns)
     condition=False
-    
+df=df1
+# If "_id" exists in the dataframe columns, rename it
+if "_id" in df.columns:
+    df.rename(columns={"_id": "ï»¿_id"}, inplace=True)
+
 
 col1, col2 = st.columns((2))
 if condition:
+# Convert 'recorded_on_text' to datetime (safe)
+    df["recorded_on_text"] = pd.to_datetime(df["recorded_on_text"], errors="coerce")
+
+    # Create 'conversation_id' if not already there
+    df["conversation_id"] = pd.factorize(df["ï»¿_id"])[0] + 1
+
+    # Initialize chatbot_response_time column
+    df["chatbot_response_time"] = None
+
+    # Calculate chatbot response time (loop version)
+    for i in range(len(df) - 1):
+        if (
+            df.loc[i, "role"] == "user" and
+            df.loc[i, "conversation_id"] == df.loc[i + 1, "conversation_id"]
+        ):
+            time_diff = (
+                df.loc[i + 1, "recorded_on_text"] - df.loc[i, "recorded_on_text"]
+            ).total_seconds()
+            df.loc[i, "chatbot_response_time"] = time_diff
+
+    # Calculate conversation times (safe version)
+    conversation_times = df.groupby("conversation_id")["recorded_on_text"].agg(
+        lambda x: (x.max() - x.min()).total_seconds() if pd.notnull(x.max()) and pd.notnull(x.min()) else None
+    )
+
+    # ✅ Assign the conversation_times back into the DataFrame (override the column)
+    df = df.set_index('conversation_id')  # Set conversation_id as index temporarily for alignment
+    df["overall_conversation_time"] = conversation_times  # Assign / override the column
+    df = df.reset_index()  # Reset index back to normal
+
+    # Optional: If you already have 'conversation_id' as a column, and you don't want to reset the index, you can do:
+    # df["overall_conversation_time"] = df["conversation_id"].map(conversation_times)
+
+    # Assign to df1
+    df1 = df
+
+    # Convert recorded_on_timestamp to datetime
     df["Chat Date"] = pd.to_datetime(df["recorded_on_timestamp"])
-    
-    # Getting the min and max date 
-    startDate = pd.to_datetime(df["Chat Date"]).min()
-    endDate = pd.to_datetime(df["Chat Date"]).max()
+    df1["Chat Date"] = pd.to_datetime(df1["recorded_on_timestamp"])
+    # Get the min and max date for the date input
+    startDate = df["Chat Date"].min()
+    endDate = df["Chat Date"].max()
+
+    # Filter out AI roles
     df = df[df["role"] != "ai"]
-    with col1:
-        date1 = pd.to_datetime(st.date_input("Start Date", startDate))
-    
-    with col2:
-        date2 = pd.to_datetime(st.date_input("End Date", endDate))
-    
-    df = df[(df["Chat Date"] >= date1) & (df["Chat Date"] <= date2)].copy()
-    
+
+    # Sidebar filter section
     st.sidebar.header("Choose the filter(s): ")
-    
-    
+
+    # Date selection now in the sidebar
+    date1 = pd.to_datetime(
+        st.sidebar.date_input("Start Date", startDate)
+    )
+
+    date2 = pd.to_datetime(
+        st.sidebar.date_input("End Date", endDate)
+    )
+
+    # Filter the dataframe by selected dates
+    df = df[(df["Chat Date"] >= date1) & (df["Chat Date"] <= date2)]
+    df1 = df1[(df1["Chat Date"] >= date1) & (df1["Chat Date"] <= date2)]
     level = st.sidebar.selectbox(
         "Pick the level for sentiment analysis", 
         options=["Response","Chat"]
@@ -127,90 +178,176 @@ if condition:
     else:
         df5 = df4[df4["ï»¿_id"].isin(conversation_id)]
     
-    
-    # Assuming df is your DataFrame and the filters are defined (could be None or non-empty values)
-    
+        
+    def include_next_ai_rows(filtered_df1, df1):
+        """
+        Include the immediate next row from df1 for each row in filtered_df1 
+        (based on original df1 order), if the next row's role is 'ai'.
+        """
+        # Reset df1 index for row position control, but preserve original index
+        df1 = df1.reset_index().rename(columns={'index': 'original_index'})
+
+        # Merge filtered_df1 with df1 to get their original positions
+        merged = filtered_df1.merge(df1[['original_index']], left_index=True, right_index=True, how='left')
+
+        # Get the original positions of the filtered rows
+        filtered_original_indices = merged['original_index'].tolist()
+
+        extra_indices = []
+
+        for idx in filtered_original_indices:
+            next_idx = idx + 1  # immediate next row in df1
+            if next_idx < len(df1):
+                next_row = df1.loc[next_idx]
+                if str(next_row['role']).lower() == 'ai':
+                    extra_indices.append(next_idx)
+
+        # Get the next AI rows from df1 (reset the index to drop original_index column)
+        extra_rows = df1.loc[extra_indices].drop(columns=['original_index'])
+
+        # Combine filtered rows and the extra AI rows
+        combined_df1 = pd.concat([filtered_df1, extra_rows]).drop_duplicates().sort_index().reset_index(drop=True)
+
+        return combined_df1
+
+
+
     if not level and not query_intent and not sentiment and not conversation_id:
         filtered_df = df
+        filtered_df1=df1
     
     elif level and not query_intent and not sentiment and not conversation_id:
         if level == "Chat":
             filtered_df = df[df["chat_sentiment"].notnull()]
-        else:
+            filtered_df1 = df1
+        else: 
             filtered_df = df
+            filtered_df1 = df1
     
     elif not level and query_intent and not sentiment and not conversation_id:
         filtered_df = df[df["query_intent"].isin(query_intent)]
+        filtered_df1 = df1[df1["query_intent"].isin(query_intent)]
+        filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif not level and not query_intent and sentiment and not conversation_id:
         filtered_df = df[df["user_sentiment"].isin(sentiment)]
+        filtered_df1 = df1[df1["user_sentiment"].isin(sentiment)]
+        filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif not level and not query_intent and not sentiment and conversation_id:
         filtered_df = df[df["ï»¿_id"].isin(conversation_id)]
+        filtered_df1 = df1[df1["user_sentiment"].isin(sentiment)]
+        filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif level and query_intent and not sentiment and not conversation_id:
         if level == "Chat":
             filtered_df = df[(df["chat_sentiment"].notnull()) & (df["query_intent"].isin(query_intent))]
+            filtered_df1 = df1[(df1["chat_sentiment"].notnull()) & (df1["query_intent"].isin(query_intent))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
         else:
             filtered_df = df[df["query_intent"].isin(query_intent)]
+            filtered_df1 = df1[df1["query_intent"].isin(query_intent)]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif level and not query_intent and sentiment and not conversation_id:
         if level == "Chat":
             filtered_df = df[(df["chat_sentiment"].notnull()) & (df["chat_sentiment"].isin(sentiment))]
+            filtered_df1 = df1[(df1["chat_sentiment"].notnull()) & (df1["chat_sentiment"].isin(sentiment))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
         else:
             filtered_df = df[(df["user_sentiment"].isin(sentiment))]
+            filtered_df1 = df1[(df1["user_sentiment"].isin(sentiment))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif level and not query_intent and not sentiment and conversation_id:
         if level == "Chat":
             filtered_df =  df[(df["chat_sentiment"].notnull()) & (df["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 =  df1[(df1["chat_sentiment"].notnull()) & (df1["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
         else:
             filtered_df =  df[(df["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 =  df1[(df1["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif not level and query_intent and sentiment and not conversation_id:
         filtered_df = df[(df["query_intent"].isin(query_intent)) & (df["user_sentiment"].isin(sentiment))]
+        filtered_df1 = df1[(df1["query_intent"].isin(query_intent)) & (df1["user_sentiment"].isin(sentiment))]
+        filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif not level and query_intent and not sentiment and conversation_id:
         filtered_df = df[(df["query_intent"].isin(query_intent)) & (df["ï»¿_id"].isin(conversation_id))]
+        filtered_df1 = df1[(df1["query_intent"].isin(query_intent)) & (df1["ï»¿_id"].isin(conversation_id))]
+        filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif not level and not query_intent and sentiment and conversation_id:
         filtered_df = df[(df["user_sentiment"].isin(sentiment)) & (df["ï»¿_id"].isin(conversation_id))]
+        filtered_df1 = df1[(df1["user_sentiment"].isin(sentiment)) & (df1["ï»¿_id"].isin(conversation_id))]
+        filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif level and query_intent and sentiment and not conversation_id:
         if level == "Chat":
             filtered_df = df[(df["chat_sentiment"].notnull()) &
                              (df["query_intent"].isin(query_intent)) & (df["chat_sentiment"].isin(sentiment))]
+            filtered_df1 = df1[(df1["chat_sentiment"].notnull()) &
+                             (df1["query_intent"].isin(query_intent)) & (df1["chat_sentiment"].isin(sentiment))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
         else:
             filtered_df = df[(df["query_intent"].isin(query_intent)) &
                              (df["user_sentiment"].isin(sentiment))]
+            filtered_df1 = df1[(df1["query_intent"].isin(query_intent)) &
+                             (df1["user_sentiment"].isin(sentiment))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif level and query_intent and not sentiment and conversation_id:
         if level == "Chat":
             filtered_df = df[ (df["chat_sentiment"].notnull()) &
                              (df["query_intent"].isin(query_intent)) & (df["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = df1[ (df1["chat_sentiment"].notnull()) &
+                    (df1["query_intent"].isin(query_intent)) & (df1["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
         else:
             filtered_df = df[(df["query_intent"].isin(query_intent)) &
                              (df["ï»¿_id"].isin(conversation_id))]
-    
+            filtered_df1 = df1[(df1["query_intent"].isin(query_intent)) &
+                             (df1["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     elif level and not query_intent and sentiment and conversation_id:
         if level == "Chat":
             filtered_df = df[(df["chat_sentiment"].notnull()) &
                              (df["chat_sentiment"].isin(sentiment)) & (df["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = df1[(df1["chat_sentiment"].notnull()) &
+                             (df1["chat_sentiment"].isin(sentiment)) & (df1["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
         else:
             filtered_df = df[ (df["user_sentiment"].isin(sentiment)) &
                              (df["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = df1[ (df1["user_sentiment"].isin(sentiment)) &
+                             (df1["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
+                             
     
     elif not level and query_intent and sentiment and conversation_id:
         filtered_df = df[(df["query_intent"].isin(query_intent)) &
                          (df["user_sentiment"].isin(sentiment)) & (df["ï»¿_id"].isin(conversation_id))]
+        filtered_df1 = df1[(df1["query_intent"].isin(query_intent)) &
+                         (df1["user_sentiment"].isin(sentiment)) & (df1["ï»¿_id"].isin(conversation_id))]
+        filtered_df1 = include_next_ai_rows(filtered_df1, df1)
     
     elif level and query_intent and sentiment and conversation_id:
         if level == "Chat":
             filtered_df = df[(df["chat_sentiment"].notnull()) &
                              (df["query_intent"].isin(query_intent)) & (df["chat_sentiment"].isin(sentiment)) &
                              (df["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = df1[(df1["chat_sentiment"].notnull()) &
+                             (df1["query_intent"].isin(query_intent)) & (df1["chat_sentiment"].isin(sentiment)) &
+                             (df1["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
         else:
             filtered_df = df[(df["query_intent"].isin(query_intent)) &
                              (df["user_sentiment"].isin(sentiment)) & (df["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = df1[(df1["query_intent"].isin(query_intent)) &
+                             (df1["user_sentiment"].isin(sentiment)) & (df1["ï»¿_id"].isin(conversation_id))]
+            filtered_df1 = include_next_ai_rows(filtered_df1, df1)
             
     
     # Determine which sentiment column to use based on the level
@@ -218,56 +355,88 @@ if condition:
         sentiment_col = "chat_sentiment"
     else:
         sentiment_col = "user_sentiment"
-    
-    # Get unique sentiment values from the selected sentiment column
     unique_sentiments = filtered_df[sentiment_col].unique()
     
-    # Ensure datetime conversion
     filtered_df['recorded_on_date'] = pd.to_datetime(filtered_df['recorded_on_timestamp']).dt.date
-    
+
     # 1️⃣ Total number of conversations
     total_conversations = filtered_df['ï»¿_id'].nunique()
-    
+
     # 2️⃣ Total overall tokens
     total_tokens = filtered_df['overall_cost'].sum()
-    
-    # 3️⃣ Total number of rows
+
+    # 3️⃣ Total number of rows/messages
     total_rows = filtered_df.shape[0]
-    
-    # 4️⃣ Weekly Chatbot Usage Growth Rate Calculation
+
+    # 4️⃣ Weekly Chatbot Usage Growth Rate
     latest_date = filtered_df['recorded_on_date'].max()
     recent_14_days_df = filtered_df[
         filtered_df['recorded_on_date'] >= (latest_date - pd.Timedelta(days=13))
     ]
-    
+
     last_7_days_convos = recent_14_days_df[
         recent_14_days_df['recorded_on_date'] > (latest_date - pd.Timedelta(days=7))
     ]['ï»¿_id'].nunique()
-    
+
     previous_7_days_convos = recent_14_days_df[
         (recent_14_days_df['recorded_on_date'] <= (latest_date - pd.Timedelta(days=7)))
     ]['ï»¿_id'].nunique()
-    
+
     if previous_7_days_convos == 0:
         growth_rate = "N/A"
     else:
         growth_rate_value = ((last_7_days_convos - previous_7_days_convos) / previous_7_days_convos) * 100
         growth_rate = f"{growth_rate_value:.2f}%"
-    
+
     # 5️⃣ Total number of unique users
     total_users = filtered_df['Person'].nunique()
-    
+
     # 6️⃣ Percentage of repeated users (users with more than one interaction)
     user_interaction_counts = filtered_df.groupby('Person')['ï»¿_id'].nunique().reset_index(name='conversation_count')
     repeated_users = user_interaction_counts[user_interaction_counts['conversation_count'] > 1].shape[0]
-    
+
     if total_users == 0:
         repeated_users_percentage = "N/A"
     else:
         repeated_users_percentage_value = (repeated_users / total_users) * 100
         repeated_users_percentage = f"{repeated_users_percentage_value:.2f}%"
-    
-    # ----------- DISPLAY ALL METRICS IN ONE BOX (Fixed) -----------
+
+    # 7️⃣ Average Chat Duration (based on one row per unique conversation)
+    # Make sure there’s a 'chat_duration' column. If not, you need to add or calculate it.
+    unique_chat_durations = filtered_df.drop_duplicates(subset='ï»¿_id')['overall_conversation_time']
+    average_chat_duration = unique_chat_durations.mean()/60 if not unique_chat_durations.empty else 0
+    average_chat_duration_str = f"{average_chat_duration:.2f} mins"
+
+    # 8️⃣ Percentage of New Users Weekly
+    recent_14_users_df = filtered_df[
+        filtered_df['recorded_on_date'] >= (latest_date - pd.Timedelta(days=13))
+    ]
+
+    last_7_days_users = set(
+        recent_14_users_df[
+            recent_14_users_df['recorded_on_date'] > (latest_date - pd.Timedelta(days=7))
+        ]['Person'].unique()
+    )
+
+    previous_7_days_users = set(
+        recent_14_users_df[
+            recent_14_users_df['recorded_on_date'] <= (latest_date - pd.Timedelta(days=7))
+        ]['Person'].unique()
+    )
+
+    new_users_this_week = last_7_days_users - previous_7_days_users
+    if len(previous_7_days_users) == 0:
+        new_users_percentage = "N/A"
+    else:
+        new_users_percentage_value = (len(new_users_this_week) / len(previous_7_days_users)) * 100
+        new_users_percentage = f"{new_users_percentage_value:.2f}%"
+
+    # 9️⃣ Interaction Rate (Average messages per conversation)
+    messages_per_conversation = filtered_df.groupby('ï»¿_id').size()
+    interaction_rate = messages_per_conversation.mean() if not messages_per_conversation.empty else 0
+    interaction_rate_str = f"{interaction_rate:.2f} msgs/chat"
+
+    # ---------------- DISPLAY METRICS IN ORIGINAL FORMAT ----------------
     st.markdown(
         """
         <style>
@@ -292,8 +461,6 @@ if condition:
         """,
         unsafe_allow_html=True
     )
-    
-    # Row 1
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown(f"""
@@ -344,7 +511,30 @@ if condition:
                 <div class="metric-value" style="color:#2471A3;">{repeated_users_percentage}</div>
             </div>
         """, unsafe_allow_html=True)
-    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-header">⏳ Avg Chat Duration</div>
+                <div class="metric-value" style="color:#884EA0;">{average_chat_duration_str}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-header">🆕 % Weekly New Users </div>
+                <div class="metric-value" style="color:#D68910;">{new_users_percentage}</div>
+            </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown(f"""
+            <div class="metric-container">
+                <div class="metric-header">💬 Interaction Rate</div>
+                <div class="metric-value" style="color:#16A085;">{interaction_rate_str}</div>
+            </div>
+        """, unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     
     with col1:
@@ -721,7 +911,128 @@ if condition:
             st.info("ℹ️ The Stacked Sentiment Score chart is only available when the selected level is **Response**.")
     
     
-    # ---------- Negative Sentiment Conversations ----------
+
+        def generate_bubble_plot(filtered_df, level):
+            #st.title("🟣 User Messages Bubble Plot (Date vs Previous Query Intent)")
+
+            # Validate required columns
+            required_columns = ['recorded_on_timestamp', 'previous_query_intent']
+            missing_cols = [col for col in required_columns if col not in filtered_df.columns]
+            if missing_cols:
+                st.error(f"The dataframe must contain columns: {missing_cols}")
+                return
+
+            # ✅ Generate selected_sentiment dynamically
+            filtered_df['selected_sentiment'] = filtered_df.apply(
+                lambda row: row['chat_sentiment'] if level == 'Chat' else row['user_sentiment'],
+                axis=1
+            )
+
+            # Convert timestamp to datetime if not already
+            filtered_df['recorded_on_timestamp'] = pd.to_datetime(filtered_df['recorded_on_timestamp'])
+
+            # Extract date
+            filtered_df['date'] = filtered_df['recorded_on_timestamp'].dt.date
+
+            # Group by date, previous_query_intent, and sentiment to get counts
+            grouped = (
+                filtered_df
+                .groupby(['date', 'previous_query_intent', 'selected_sentiment'])
+                .size()
+                .reset_index(name='message_count')
+            )
+
+            # Color mapping for sentiment
+            color_map = {
+                'positive': 'green',
+                'negative': 'red',
+                'neutral': 'yellow'
+            }
+
+            # ✅ Create bubble plot with X-Axis as Date and Y-Axis as Previous Query Intent
+            fig = px.scatter(
+                grouped,
+                x='date',
+                y='previous_query_intent',
+                size='message_count',
+                color='selected_sentiment',
+                color_discrete_map=color_map,
+                size_max=60,
+                labels={
+                    'date': 'Date',
+                    'previous_query_intent': 'Previous Query Intent',
+                    'message_count': 'Message Count',
+                    'selected_sentiment': 'Sentiment'
+                },
+                #title="🟣 Bubble Plot: Messages by Date and Previous Query Intent"
+            )
+
+            # Customize layout
+            fig.update_layout(
+                xaxis=dict(title='Date'),
+                yaxis=dict(title='Previous Query Intent'),
+                legend=dict(title='Sentiment'),
+                height=600
+            )
+
+            # ✅ Custom CSS for visible soft box around the plot section
+            st.markdown(
+                """
+                <style>
+                .bubbleplot-container {
+                    border: 1px solid #d3d3d3;  /* Light grey border */
+                    border-radius: 15px;
+                    padding: 20px;
+                    margin-bottom: 30px;
+                    box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.05);  /* Thinner shadow */
+                    background-color: white;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    min-height: 300px;
+                }
+                .bubbleplot-title {
+                    text-align: center;
+                    font-size: 22px;
+                    font-weight: 600;
+                    color: #333333;
+                    margin-bottom: 5px;
+                    position: relative;
+                }
+                .bubbleplot-title::after {
+                    content: "";
+                    display: block;
+                    width: 60%;
+                    height: 2px;
+                    background-color: #e0e0e0; /* Light grey underline for consistency */
+                    margin: 8px auto 0 auto;
+                    border-radius: 5px;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # ✅ Section Title (with underline)
+            st.markdown(
+                """
+                <h3 class='bubbleplot-title'>🫧 Bubble Plot: Previous Query Intent & Sentiment with Time</h3>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # ✅ The container box for the plot
+            #st.markdown('<div class="bubbleplot-container">', unsafe_allow_html=True)
+
+            # Show the Plotly bubble plot
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Close the container
+            st.markdown('</div>', unsafe_allow_html=True)
+        # Example usage:
+        st.markdown("""<div class='plot-container'>""", unsafe_allow_html=True)
+        generate_bubble_plot(filtered_df1, level)
+            # ---------- Negative Sentiment Conversations ----------
     
     # Custom CSS for visible soft box around the section and each conversation block
         st.markdown(
@@ -897,11 +1208,341 @@ if condition:
             st.info("ℹ️ **No negative sentiments found based on the specified level logic.**")
     
         st.markdown("""</div>""", unsafe_allow_html=True)
+        
+    def display_summary(df):
+        columns_to_display = ["ï»¿_id", "role", "content", "user_sentiment", "previous_query_intent", "query_intent"]
+
+        missing_cols = [col for col in columns_to_display if col not in df.columns]
+        if missing_cols:
+            st.error(f"Missing columns in dataframe: {missing_cols}")
+            return
+
+        # Custom CSS styling
+        st.markdown("""
+            <style>
+            .summary-container {
+                border: 1px solid #d3d3d3;
+                border-radius: 15px;
+                padding: 20px;
+                margin-bottom: 30px;
+                box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.05);
+                background-color: white;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .summary-title {
+                text-align: center;
+                font-size: 22px;
+                font-weight: 600;
+                color: #333333;
+                margin-bottom: 5px;
+                position: relative;
+            }
+            .summary-title::after {
+                content: "";
+                display: block;
+                width: 60%;
+                height: 2px;
+                background-color: #e0e0e0;
+                margin: 8px auto 0 auto;
+                border-radius: 5px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        # --- Summary Table ---
+        st.markdown("""<h3 class='summary-title'>💬 Chat Summary Table</h3>""", unsafe_allow_html=True)
+
+        def color_sentiment(val):
+            if pd.isna(val): return '#e0e0e0'
+            val = val.lower()
+            return {'positive': '#b6e3b6', 'negative': '#f5b5b5', 'neutral': '#f5f5b5'}.get(val, '#e0e0e0')
+
+        styled_df = df[columns_to_display].style.applymap(
+            lambda val: f'background-color: {color_sentiment(val)}', subset=["user_sentiment"]
+        )
+
+        #st.markdown('<div class="summary-container">', unsafe_allow_html=True)
+        st.dataframe(styled_df, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        csv_data = df[columns_to_display].to_csv(index=False)
+        st.download_button("📥 Download Summary as CSV", csv_data, file_name="chat_summary.csv", mime="text/csv")
+        st.markdown('<div class="summary-container">', unsafe_allow_html=True)
+        # --- Detailed View ---
+        st.markdown("""<h3 class='summary-title'>📂 Detailed Chat View (Grouped by Conversation ID)</h3>""", unsafe_allow_html=True)
+
+        unique_sentiments = df["user_sentiment"].dropna().unique().tolist()
+        sentiment_filter = st.multiselect("🎭 Filter Conversations by Sentiment:", options=unique_sentiments)
+
+        grouped = df.groupby('ï»¿_id')
+        if 'expand_all' not in st.session_state:
+            st.session_state['expand_all'] = False
+
+        if st.button("Expand/Collapse All Chats"):
+            st.session_state['expand_all'] = not st.session_state['expand_all']
+
+        for conversation_id, group in grouped:
+            if sentiment_filter and not group["user_sentiment"].isin(sentiment_filter).any():
+                continue
+
+            with st.expander(f"📌 Conversation ID: {conversation_id}", expanded=st.session_state['expand_all']):
+                for idx, row in group.iterrows():
+                    role = row['role'].lower()
+                    user_sentiment = row['user_sentiment']
+                    background_color = color_sentiment(user_sentiment) if role == "user" else "#f0f0f0"
+
+                    if role == "ai":
+                        role_display = "🤖 AI"
+                        content_block = f"""
+                            <div style="background-color:{background_color}; padding:10px; margin-bottom:10px; border-left:5px solid #ccc; border-radius:5px">
+                                <h4>{role_display}</h4>
+                                <p><strong>Content:</strong> {row['content']}</p>
+                                {f"<p><strong>Source:</strong> {row['source']}</p>" if 'source' in df.columns and pd.notna(row['source']) else ''}
+                            
+                        """
+                    else:
+                        role_display = "👤 User"
+                        content_block = f"""
+                            <div style="background-color:{background_color}; padding:10px; margin-bottom:10px; border-left:5px solid #ccc; border-radius:5px">
+                                <h4>{role_display}</h4>
+                                <p><strong>Content:</strong> {row['content']}</p>
+                                <p><strong>Sentiment:</strong> {user_sentiment or 'N/A'}</p>
+                                <p><strong>Previous Query Intent:</strong> {row['previous_query_intent'] or 'N/A'}</p>
+                                <p><strong>Current Query Intent:</strong> {row['query_intent'] or 'N/A'}</p>
+                            </div>
+                        """
+                    st.markdown(content_block, unsafe_allow_html=True)
+
+# Example call
+    display_summary(filtered_df1)
+
+
+
     
-    
+    import openai
+    from openai import OpenAI
+    from dotenv import load_dotenv
+
+
+    # Load environment variables from .env file
+    load_dotenv()
+
+    # Retrieve your API key
+    api_key = "Insert your API KEY here"
+    client = openai.OpenAI(api_key = "Insert your API KEY here")
+
+    # Optional: Raise an error if the key is missing
+    if not api_key:
+        st.error("OPENAI_API_KEY is not set in environment variables.")
+        st.stop()
+
+    def generate_in_depth_summary_from_df(df):
+        if df.empty:
+            return "No data to summarize."
+
+        user_messages = df[df['role'].str.lower() == 'user']['content'].dropna().tolist()
+        if not user_messages:
+            return "No user messages found to summarize."
+
+        combined_messages = "\n".join([f"- {msg}" for msg in user_messages[:200]])
+
+        prompt = f"""
+        You are an expert data analyst. Analyze the following user questions and generate a detailed and comprehensive report.
+
+        The report should include:
+
+        1. **Key Themes**: Describe the major topics and themes that emerge from the user questions. Explain why these themes are important.
+
+        2. **Frequently Asked Questions (FAQs)**: Provide a list of common and recurring user questions. Group similar questions where appropriate and elaborate on why users might be asking them.
+
+        3. **Common Concerns and Pain Points**: Identify specific issues, confusion points, or frustrations that users frequently express. Offer insights into why these concerns arise.
+
+        4. **Additional Insights**: Share any other relevant observations that may be important for understanding user behavior, needs, or opportunities for enhancing support.
+
+        Make sure the analysis is detailed, insightful, and written in a clear narrative style.
+
+        ---
+
+        Here are the user questions:
+
+        {combined_messages}
+        """
+
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1500,
+                temperature=0.5
+            )
+
+            return response.choices[0].message.content
+
+        except Exception as e:
+            return f"An error occurred: {e}"
+
+    # --- Display AI Summary ---
+    def display_ai_summary(df):
+        st.markdown('<div class="summary-container">', unsafe_allow_html=True)
+        st.markdown("""<h3 class='summary-title'>📊 AI-Generated Detailed Analysis</h3>""", unsafe_allow_html=True)
+
+        if st.button("Generate Detailed AI Summary"):
+            with st.spinner("Generating a comprehensive report..."):
+                summary = generate_in_depth_summary_from_df(df)
+
+                
+                st.markdown(summary, unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                st.download_button(
+                    label="Download Report as TXT",
+                    data=summary,
+                    file_name="user_query_detailed_report.txt",
+                    mime="text/plain"
+                )
+    display_ai_summary(filtered_df1)
+
+
     
     
     with col2:
+
+        def generate_heatmap_with_tabs(filtered_df, level):
+            #st.title("📊 User Messages Heatmap")
+
+            # Validate required columns
+            if 'recorded_on_timestamp' not in filtered_df.columns:
+                st.error("The dataframe must contain 'recorded_on_timestamp'.")
+                return
+
+            # ✅ Generate selected_sentiment dynamically
+            filtered_df['selected_sentiment'] = filtered_df.apply(
+                lambda row: row['chat_sentiment'] if level == 'Chat' else row['user_sentiment'],
+                axis=1
+            )
+
+            # Convert timestamp to datetime if not already
+            filtered_df['recorded_on_timestamp'] = pd.to_datetime(filtered_df['recorded_on_timestamp'])
+
+            # Extract day name and hour
+            filtered_df['day_name'] = filtered_df['recorded_on_timestamp'].dt.day_name()
+            filtered_df['hour'] = filtered_df['recorded_on_timestamp'].dt.hour
+
+            # Ensure the day_name column follows Mon-Sun order
+            days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            filtered_df['day_name'] = pd.Categorical(filtered_df['day_name'], categories=days_order, ordered=True)
+
+            # Create pivot tables for each category
+            pivot_tables = {
+                "Overall": create_pivot(filtered_df),
+                "Positive": create_pivot(filtered_df[filtered_df['selected_sentiment'].str.lower() == 'positive']),
+                "Negative": create_pivot(filtered_df[filtered_df['selected_sentiment'].str.lower() == 'negative']),
+                "Neutral": create_pivot(filtered_df[filtered_df['selected_sentiment'].str.lower() == 'neutral']),
+            }
+
+            # ✅ Custom CSS for visible soft box and title underline
+            st.markdown(
+                """
+                <style>
+                .heatmap-container {
+                    border: 1px solid #d3d3d3;
+                    border-radius: 15px;
+                    padding: 20px;
+                    margin-bottom: 30px;
+                    box-shadow: 0px 2px 10px rgba(0, 0, 0, 0.05);
+                    background-color: white;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    min-height: 300px;
+                }
+                .sentiment-title {
+                    text-align: center;
+                    font-size: 22px;
+                    font-weight: 600;
+                    color: #333333;
+                    margin-bottom: 5px;
+                    position: relative;
+                }
+                .sentiment-title::after {
+                    content: "";
+                    display: block;
+                    width: 60%;
+                    height: 2px;
+                    background-color: #e0e0e0;
+                    margin: 8px auto 0 auto;
+                    border-radius: 5px;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            # ✅ Section Header for Heatmaps
+            st.markdown(
+                """
+                <h3 class='sentiment-title'>🗺️ Sentiment Heatmaps</h3>
+                """,
+                unsafe_allow_html=True
+            )
+
+            # Create tabs for each sentiment heatmap
+            tabs = st.tabs([f"{sentiment}" for sentiment in pivot_tables.keys()])
+
+            for tab, sentiment in zip(tabs, pivot_tables.keys()):
+                with tab:
+                    # Color map selection
+                    cmap = (
+                        "Blues" if sentiment == "Overall" else
+                        "Greens" if sentiment == "Positive" else
+                        "Reds" if sentiment == "Negative" else
+                        "YlOrBr"  # Yellow for Neutral
+                    )
+
+                    # Heatmap container
+                    #st.markdown('<div class="heatmap-container">', unsafe_allow_html=True)
+
+                    with st.expander(f"🕒 {sentiment} Sentiment Heatmap", expanded=True):
+                        plot_heatmap(pivot_tables[sentiment], cmap, title=f"{sentiment} Messages (Day vs Time)")
+
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+        def create_pivot(df):
+            """
+            Create a pivot table of message counts grouped by day_name and hour.
+            """
+            return df.groupby(['day_name', 'hour']).size().unstack(fill_value=0)
+
+        def plot_heatmap(pivot_table, cmap, title):
+            """
+            Plot a heatmap from the pivot table.
+            """
+            plt.figure(figsize=(10, 6))
+            sns.heatmap(
+                pivot_table.T,  # Transpose for better layout
+                cmap=cmap,
+                linewidths=0.5,
+                linecolor='white',
+                cbar_kws={'label': 'Message Count'}
+            )
+            plt.title(title, fontsize=16)
+            plt.xlabel('Day of the Week')
+            plt.ylabel('Hour of the Day')
+            plt.xticks(rotation=45)
+            plt.yticks(rotation=0)
+            st.pyplot(plt.gcf())
+            plt.clf()
+
+        # Example usage:
+        generate_heatmap_with_tabs(filtered_df1, level)
+        st.markdown("""<div class='plot-container'>""", unsafe_allow_html=True)
+
+
+    # Example usage
+    # generate_heatmap(filtered_df1, level='Chat') or level='Query'
+
     # ---------- Continuous Sentiment Line Plot (Standardized) ----------
     
     # Sort by conversation_id and timestamp
@@ -939,7 +1580,7 @@ if condition:
             x='adjusted_row_number',
             y='sentiment_score',
             markers=True,
-            labels={'adjusted_row_number': 'Row Number', 'sentiment_score': 'Sentiment Score'},
+            labels={'adjusted_row_number': 'Conversation Number', 'sentiment_score': 'Sentiment Score'},
             color_discrete_sequence=['#85C1E9']
         )
     
@@ -948,9 +1589,9 @@ if condition:
         fig.update_layout(
             xaxis=dict(
                 showgrid=True,
-                title=dict(text='Row Number', font=dict(size=12, color='black', family='Arial', weight='bold'))
+                title=dict(text='Conversation Number', font=dict(size=12, color='black', family='Arial', weight='bold'))
             ),
-            yaxis=dict(
+            yaxis=dict( 
                 tickvals=[-1, 0, 1],
                 ticktext=['Negative (-1)', 'Neutral (0)', 'Positive (1)'],
                 title=dict(text='Sentiment Score', font=dict(size=12, color='black', family='Arial', weight='bold')),
@@ -1031,8 +1672,10 @@ if condition:
         st.plotly_chart(fig, use_container_width=True)
     
         st.markdown("""</div>""", unsafe_allow_html=True)
-    
-    
+
+
+
+
     
         # ---------- Average Daily Sentiment Over Time (With Standardized Box Styling) ----------
     
